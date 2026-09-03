@@ -6,7 +6,7 @@
 
 Executable checks for silent failures in diffusion distillation and adversarial training. Each audit targets an invariant that scalar losses cannot prove.
 
-This repository turns four real debugging patterns into framework-light demos and executable tests:
+This repository turns four real debugging patterns into framework-light demos and executable tests, then provides sanitized DMD and MeanFlow recipes that demonstrate the corresponding training contracts:
 
 1. **Scheduler trace mismatch** — a configured step count does not fully describe the solver trajectory.
 2. **BF16 EMA freezing** — a valid EMA update can round back to the old shadow value.
@@ -68,8 +68,37 @@ python examples/ema_freeze_demo.py
 python examples/noise_pairing_demo.py
 python examples/scheduler_trace_demo.py
 python examples/gan_detach_demo.py
+python examples/dmd_training_step.py
+python examples/meanflow_interval_demo.py
 pytest -q
 ```
+
+## Distillation recipes
+
+The public `recipes` package contains executable, model-agnostic training components reconstructed from first principles:
+
+- **DMD-style training:** a stop-gradient distribution-matching projection, a separate fake-score regression update, and exact noise-pair validation for cached teacher regression;
+- **MeanFlow-style training:** per-sample FM/one-step/generic interval sampling, a detached identity target, scale-invariant MSE, and average-velocity reconstruction.
+
+```python
+from generative_training_audit.recipes.dmd import dmd_projection_loss
+
+# Student step: gradients enter x_dm, not either score estimator.
+loss_dm = dmd_projection_loss(x_dm, v_real, v_fake)
+loss_dm.backward()
+```
+
+```python
+from generative_training_audit.recipes.meanflow import (
+    meanflow_identity_target,
+    sample_intervals,
+)
+
+intervals = sample_intervals(batch_size)
+target = meanflow_identity_target(velocity, intervals.h, total_derivative)
+```
+
+See [public distillation recipes](docs/distillation-recipes.md) for the equations, optimizer boundaries, endpoint semantics and deliberate privacy omissions.
 
 ## Integration examples
 
@@ -167,11 +196,15 @@ generative-training-audit/
 │   ├── ema.py
 │   ├── gan.py
 │   ├── noise.py
+│   ├── recipes/
+│   │   ├── dmd.py
+│   │   └── meanflow.py
 │   ├── report.py
 │   ├── scheduler.py
 │   └── torch_ema.py
 ├── examples/
 ├── tests/
+├── docs/distillation-recipes.md
 ├── docs/integration-checklist.md
 └── .github/workflows/tests.yml
 ```
@@ -201,6 +234,8 @@ Every push runs the suite on Python 3.10 and 3.12. The tests cover:
 - non-zero discriminator gradient under correct sample detachment;
 - FP32 shadow storage for a BF16 PyTorch module;
 - CLI text/JSON output and exit status.
+- DMD optimizer isolation and paired-regression noise rejection;
+- MeanFlow interval invariants, identity-target detachment and exact linear-path reconstruction.
 
 ## License
 

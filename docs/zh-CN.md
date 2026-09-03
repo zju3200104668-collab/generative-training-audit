@@ -9,6 +9,13 @@
 | Teacher cache 噪声错配 | target 能正常加载 | target 与当前输入是否对应同一噪声张量 |
 | GAN 梯度断路 | fake loss 能正常打印 | fake-only loss 是否对判别器产生非零梯度 |
 
+仓库还包含两组完全独立重写的公开训练配方：
+
+- DMD 式三网络训练中的 Student/Fake-score 双优化器梯度边界；
+- MeanFlow 式 FM 锚点、一步区间和通用区间采样，以及平均速度目标。
+
+这些配方只保留算法契约，不包含企业模型封装、私有权重、数据、路径或生产配置。详细说明见 [`distillation-recipes.md`](distillation-recipes.md)。
+
 ## 运行
 
 ```bash
@@ -20,6 +27,8 @@ python examples/ema_freeze_demo.py
 python examples/noise_pairing_demo.py
 python examples/scheduler_trace_demo.py
 python examples/gan_detach_demo.py
+python examples/dmd_training_step.py
+python examples/meanflow_interval_demo.py
 pytest -q
 ```
 

@@ -16,10 +16,15 @@ class NoiseRecord:
     fingerprint: str
 
 
-def deterministic_seed(shard_id: int, sample_index: int) -> int:
+def deterministic_seed(
+    shard_id: int, sample_index: int, *, namespace: str = "gtaudit"
+) -> int:
+    """Derive a stable 64-bit seed without exposing a project-specific formula."""
+
     if shard_id < 0 or sample_index < 0:
         raise ValueError("shard_id and sample_index must be non-negative")
-    return shard_id * 100_000 + sample_index
+    payload = f"{namespace}:{shard_id}:{sample_index}".encode()
+    return int.from_bytes(hashlib.blake2s(payload, digest_size=8).digest(), "little")
 
 
 def sample_noise(seed: int, shape: tuple[int, ...]) -> np.ndarray:

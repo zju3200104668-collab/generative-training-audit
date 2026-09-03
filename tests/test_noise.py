@@ -3,9 +3,16 @@ import pytest
 
 from generative_training_audit.noise import (
     assert_noise_pair,
+    deterministic_seed,
     make_noise_record,
     sample_noise,
 )
+
+
+def test_seed_derivation_is_stable_and_namespaced():
+    assert deterministic_seed(3, 17) == deterministic_seed(3, 17)
+    assert deterministic_seed(3, 17) != deterministic_seed(3, 18)
+    assert deterministic_seed(3, 17) != deterministic_seed(3, 17, namespace="other")
 
 
 def test_identical_seed_reproduces_exact_noise():
