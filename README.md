@@ -25,7 +25,7 @@ Many training bugs do not crash. Losses remain finite and dashboards look stable
 ## Installation
 
 ```bash
-git clone https://github.com/<your-account>/generative-training-audit.git
+git clone https://github.com/zju3200104668-collab/generative-training-audit.git
 cd generative-training-audit
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
