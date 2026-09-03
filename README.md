@@ -1,6 +1,10 @@
 # Generative Training Audit
 
-Small, reproducible checks for silent failures in diffusion distillation and adversarial training.
+[![tests](https://github.com/zju3200104668-collab/generative-training-audit/actions/workflows/tests.yml/badge.svg)](https://github.com/zju3200104668-collab/generative-training-audit/actions/workflows/tests.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Executable checks for silent failures in diffusion distillation and adversarial training. Each audit targets an invariant that scalar losses cannot prove.
 
 This repository turns four real debugging patterns into framework-light demos and executable tests:
 
@@ -34,7 +38,30 @@ pip install -e ".[test]"
 
 PyTorch is only required for the GAN gradient audit. The other three demos use NumPy.
 
-## Quick start
+## 60-second audit
+
+```bash
+gtaudit all
+gtaudit all --json  # machine-readable output for CI or experiment launchers
+```
+
+Expected output:
+
+```text
+[PASS] bf16_ema: detected BF16 freeze while FP32 master still updates
+       bf16_shadow_changed=False
+       fp32_shadow_changed=True
+       update_to_spacing_ratio=0.00128
+[PASS] noise_pairing: exact pair passed and mismatched noise was rejected
+       mismatch_detected=True
+[PASS] scheduler_trace: executed transitions satisfy count, endpoint and continuity invariants
+       transition_count=2
+[PASS] gan_gradient: detached logits lose D gradients; detached samples preserve them
+       broken_grad_norm=0.0
+       correct_grad_norm=<positive value>
+```
+
+Run individual demonstrations and the full test suite:
 
 ```bash
 python examples/ema_freeze_demo.py
@@ -42,6 +69,69 @@ python examples/noise_pairing_demo.py
 python examples/scheduler_trace_demo.py
 python examples/gan_detach_demo.py
 pytest -q
+```
+
+## Integration examples
+
+### Audit a configured scheduler
+
+The adapter accepts a Diffusers-like object after `set_timesteps` and requires the common `N timesteps / N+1 sigmas` contract to be explicit:
+
+```python
+from generative_training_audit.scheduler import (
+    audit_transitions,
+    format_trace,
+    transitions_from_scheduler,
+)
+
+scheduler.set_timesteps(num_inference_steps=2)
+trace = transitions_from_scheduler(scheduler, terminal_time=0.0)
+print(format_trace(trace))
+
+issues = audit_transitions(
+    trace,
+    expected_steps=2,
+    expected_end=0.0,
+)
+if issues:
+    raise RuntimeError(f"unexpected solver trajectory: {issues}")
+```
+
+### Keep the EMA master in FP32
+
+```python
+import torch
+
+from generative_training_audit.torch_ema import TorchEMA
+
+model = model.to(dtype=torch.bfloat16)
+ema = TorchEMA(model, decay=0.999)
+
+optimizer.step()
+ema.update(model)  # every shadow tensor remains FP32
+
+ema.copy_to(eval_model)
+```
+
+### Assert teacher-cache noise pairing
+
+```python
+from generative_training_audit.noise import assert_noise_pair, make_noise_record
+
+# Cache creation
+record = make_noise_record(seed, exact_teacher_noise)
+
+# Training startup / sample loading
+assert_noise_pair(record, current_student_noise)
+```
+
+### Audit the discriminator's fake-only gradient
+
+```python
+from generative_training_audit.gan import audit_fake_branch
+
+grad_norm = audit_fake_branch(discriminator, fake_batch)
+assert grad_norm > 0
 ```
 
 ### Expected EMA behavior
@@ -77,9 +167,12 @@ generative-training-audit/
 │   ├── ema.py
 │   ├── gan.py
 │   ├── noise.py
-│   └── scheduler.py
+│   ├── report.py
+│   ├── scheduler.py
+│   └── torch_ema.py
 ├── examples/
 ├── tests/
+├── docs/integration-checklist.md
 └── .github/workflows/tests.yml
 ```
 
@@ -91,9 +184,23 @@ generative-training-audit/
 - Keep slow state such as EMA masters in FP32.
 - State evidence boundaries explicitly; do not infer missing experiment details.
 
+For a pre-flight review before expensive training, use the [training integration checklist](docs/integration-checklist.md).
+
 ## Scope
 
 This is a diagnostic teaching repository, not a training framework. The scheduler utility does not reproduce every scheduler in Diffusers, and the BF16 conversion is a small NumPy emulation intended to expose rounding behavior. Validate production code against the exact framework and hardware used for training.
+
+## CI coverage
+
+Every push runs the suite on Python 3.10 and 3.12. The tests cover:
+
+- bit-level BF16 rounding and the frozen-shadow counterexample;
+- deterministic noise regeneration and mismatch rejection;
+- transition count, endpoint and scheduler-contract validation;
+- finite fake BCE with zero discriminator gradient under broken detachment;
+- non-zero discriminator gradient under correct sample detachment;
+- FP32 shadow storage for a BF16 PyTorch module;
+- CLI text/JSON output and exit status.
 
 ## License
 

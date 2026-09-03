@@ -40,6 +40,26 @@ def build_transitions(
     ]
 
 
+def transitions_from_scheduler(scheduler, *, terminal_time: float = 0.0) -> list[Transition]:
+    """Extract an auditable trace from a configured Diffusers-like scheduler.
+
+    Most schedulers expose N timesteps and N+1 sigmas after ``set_timesteps``.
+    This adapter deliberately validates that contract instead of guessing when
+    a custom scheduler exposes a different representation.
+    """
+
+    if not hasattr(scheduler, "timesteps") or not hasattr(scheduler, "sigmas"):
+        raise TypeError("scheduler must expose timesteps and sigmas")
+    times = [_as_float(value) for value in scheduler.timesteps]
+    sigmas = [_as_float(value) for value in scheduler.sigmas]
+    if len(sigmas) != len(times) + 1:
+        raise ValueError(
+            "expected one terminal sigma: len(sigmas) must equal len(timesteps) + 1"
+        )
+    visited_times = times + [float(terminal_time)]
+    return build_transitions(visited_times, sigmas)
+
+
 def audit_transitions(
     transitions: Sequence[Transition],
     *,
@@ -82,3 +102,9 @@ def format_trace(transitions: Sequence[Transition]) -> str:
             f"{t.index:>4} | {t.time_from:.6g} -> {t.time_to:.6g} | {sigma}"
         )
     return "\n".join(rows)
+
+
+def _as_float(value) -> float:
+    if hasattr(value, "item"):
+        value = value.item()
+    return float(value)
